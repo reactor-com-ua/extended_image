@@ -14,10 +14,13 @@ class EditActionDetails {
   Rect? _layoutRect;
   Rect? _screenDestinationRect;
   Rect? _rawDestinationRect;
+  double _originalWidth = 0.0;
+  double _originalHeight = 0.0;
 
   /// #235
   /// when we reach edge, we should not allow to zoom out.
   bool _reachCropRectEdge = false;
+  bool isNeedBackToBounds = false;
 
   double totalScale = 1.0;
   double preTotalScale = 1.0;
@@ -123,6 +126,12 @@ class EditActionDetails {
     _screenDestinationRect = newScreenDestinationRect;
     totalScale *= scale;
     preTotalScale = totalScale;
+    if (totalScale < 1.0) {
+      totalScale = 1.0;
+    }
+    if (preTotalScale < 1.0) {
+      preTotalScale = 1.0;
+    }
   }
 
   void flip() {
@@ -185,26 +194,6 @@ class EditActionDetails {
     return rect;
   }
 
-  // @override
-  // int get hashCode => hashValues(_rotateRadian, _flipX, _flipY, cropRect,
-  //     _layoutRect, _rawDestinationRect, _cropAspectRatio, cropRectPadding);
-
-  // @override
-  // bool operator ==(dynamic other) {
-  //   if (other.runtimeType != runtimeType) {
-  //     return false;
-  //   }
-  //   return other is EditActionDetails &&
-  //       _rotateRadian == other.rotateRadian &&
-  //       _flipX == other.flipX &&
-  //       _flipY == other.flipY &&
-  //       cropRect == other.cropRect &&
-  //       _layoutRect == other._layoutRect &&
-  //       _rawDestinationRect == other._rawDestinationRect &&
-  //       _cropAspectRatio == other._cropAspectRatio &&
-  //       cropRectPadding != other.cropRectPadding;
-  // }
-
   void initRect(Rect layoutRect, Rect destinationRect) {
     if (_layoutRect != layoutRect) {
       _layoutRect = layoutRect;
@@ -222,8 +211,21 @@ class EditActionDetails {
 
     if (screenDestinationRect != null) {
       /// scale
+      if (totalScale < 1.0) {
+        totalScale = 1.0;
+      }
+      if (preTotalScale < 1.0) {
+        preTotalScale = 1.0;
+      }
       final scaleDelta = totalScale / preTotalScale;
       if (scaleDelta != 1.0) {
+        if (_originalWidth == 0.0) {
+          _originalWidth = _screenDestinationRect!.width;
+        }
+        if (_originalHeight == 0.0) {
+          _originalHeight = _screenDestinationRect!.height;
+        }
+
         var focalPoint = screenFocalPoint ?? _screenDestinationRect!.center;
         focalPoint = Offset(
           focalPoint.dx
@@ -240,45 +242,41 @@ class EditActionDetails {
               .toDouble(),
         );
 
+        final width = _screenDestinationRect!.width * scaleDelta;
+        final height = _screenDestinationRect!.height * scaleDelta;
         _screenDestinationRect = Rect.fromLTWH(
           focalPoint.dx -
               (focalPoint.dx - _screenDestinationRect!.left) * scaleDelta,
           focalPoint.dy -
               (focalPoint.dy - _screenDestinationRect!.top) * scaleDelta,
-          _screenDestinationRect!.width * scaleDelta,
-          _screenDestinationRect!.height * scaleDelta,
+          (width < _originalWidth) ? _originalWidth : width,
+          (height < _originalHeight) ? _originalHeight : height,
         );
         preTotalScale = totalScale;
+        if (totalScale < 1.0) {
+          totalScale = 1.0;
+        }
+        if (preTotalScale < 1.0) {
+          preTotalScale = 1.0;
+        }
         delta = Offset.zero;
       }
 
       /// move
       else {
         if (_screenDestinationRect != screenCropRect) {
-          final topSame =
-              doubleEqual(_screenDestinationRect!.top, screenCropRect!.top);
-          final leftSame =
-              doubleEqual(_screenDestinationRect!.left, screenCropRect!.left);
-          final bottomSame = doubleEqual(
-            _screenDestinationRect!.bottom,
-            screenCropRect!.bottom,
-          );
-          final rightSame =
-              doubleEqual(_screenDestinationRect!.right, screenCropRect!.right);
-          if (topSame && bottomSame) {
-            delta = Offset(delta.dx, 0.0);
-          } else if (leftSame && rightSame) {
-            delta = Offset(0.0, delta.dy);
-          }
-
           _screenDestinationRect = _screenDestinationRect!.shift(delta);
         }
         //we have shift offset, we should clear delta.
         delta = Offset.zero;
       }
 
-      _screenDestinationRect =
+      final boundaryRect =
           computeBoundary(_screenDestinationRect!, screenCropRect!);
+      if (isNeedBackToBounds) {
+        _screenDestinationRect = boundaryRect;
+        isNeedBackToBounds = false;
+      }
 
       // make sure that crop rect is all in image rect.
       if (screenCropRect != null) {
@@ -291,35 +289,16 @@ class EditActionDetails {
 
           // make sure that image rect keep same aspect ratio
           if (topSame && bottomSame) {
-            rect = Rect.fromCenter(
-              center: rect.center,
-              width: rect.height /
-                  _screenDestinationRect!.height *
-                  _screenDestinationRect!.width,
-              height: rect.height,
-            );
             _reachCropRectEdge = true;
           } else if (leftSame && rightSame) {
-            rect = Rect.fromCenter(
-              center: rect.center,
-              width: rect.width,
-              height: rect.width /
-                  _screenDestinationRect!.width *
-                  _screenDestinationRect!.height,
-            );
             _reachCropRectEdge = true;
           }
-          totalScale =
-              totalScale / (rect.width / _screenDestinationRect!.width);
-          preTotalScale = totalScale;
-          _screenDestinationRect = rect;
         }
       }
     } else {
       _screenDestinationRect = getRectWithScale(_rawDestinationRect!);
-      _screenDestinationRect =
-          computeBoundary(_screenDestinationRect!, screenCropRect!);
     }
+
     return _screenDestinationRect!;
   }
 
@@ -380,12 +359,8 @@ class EditActionDetails {
       }
     }
 
-    _computeHorizontalBoundary =
-        doubleCompare(result.left, layoutRect.left) <= 0 &&
-            doubleCompare(result.right, layoutRect.right) >= 0;
-
-    _computeVerticalBoundary = doubleCompare(result.top, layoutRect.top) <= 0 &&
-        doubleCompare(result.bottom, layoutRect.bottom) >= 0;
+    _computeHorizontalBoundary = true;
+    _computeVerticalBoundary = true;
     return result;
   }
 }

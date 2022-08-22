@@ -102,6 +102,7 @@ class ExtendedImageEditorState extends State<ExtendedImageEditor> {
     Widget result = GestureDetector(
       onScaleStart: _handleScaleStart,
       onScaleUpdate: _handleScaleUpdate,
+      onScaleEnd: _handleScaleEnd,
       behavior: _editorConfig!.hitTestBehavior,
       child: Stack(
         children: <Widget>[
@@ -243,6 +244,13 @@ class ExtendedImageEditorState extends State<ExtendedImageEditor> {
         _editorConfig!.editActionDetailsIsChanged?.call(_editActionDetails);
       });
     }
+  }
+
+  void _handleScaleEnd(ScaleEndDetails details) {
+    setState(() {
+      _editActionDetails!.isNeedBackToBounds = true;
+      _editorConfig!.editActionDetailsIsChanged?.call(_editActionDetails);
+    });
   }
 
   void _handlePointerSignal(PointerSignalEvent event) {
