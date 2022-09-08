@@ -9,8 +9,6 @@ class EditActionDetails {
   double _rotateRadian = 0.0;
   bool _flipX = false;
   bool _flipY = false;
-  bool _computeHorizontalBoundary = false;
-  bool _computeVerticalBoundary = false;
   Rect? _layoutRect;
   Rect? _screenDestinationRect;
   Rect? _rawDestinationRect;
@@ -21,6 +19,7 @@ class EditActionDetails {
   /// when we reach edge, we should not allow to zoom out.
   bool _reachCropRectEdge = false;
   bool isNeedBackToBounds = false;
+  bool isRotated = false;
 
   double totalScale = 1.0;
   double preTotalScale = 1.0;
@@ -91,6 +90,7 @@ class EditActionDetails {
     if (cropRect == null) {
       return;
     }
+    isRotated = true;
     _rotateRadian += angle;
     _rotateRadian %= 2 * pi;
     if (_flipX && _flipY && isPi) {
@@ -279,7 +279,7 @@ class EditActionDetails {
       }
 
       // make sure that crop rect is all in image rect.
-      if (screenCropRect != null) {
+      if (isRotated && screenCropRect != null) {
         var rect = screenCropRect!.expandToInclude(_screenDestinationRect!);
         if (rect != _screenDestinationRect) {
           final topSame = doubleEqual(rect.top, screenCropRect!.top);
@@ -289,16 +289,43 @@ class EditActionDetails {
 
           // make sure that image rect keep same aspect ratio
           if (topSame && bottomSame) {
+            rect = Rect.fromCenter(
+              center: rect.center,
+              width: rect.height /
+                  _screenDestinationRect!.height *
+                  _screenDestinationRect!.width,
+              height: rect.height,
+            );
             _reachCropRectEdge = true;
           } else if (leftSame && rightSame) {
+            rect = Rect.fromCenter(
+              center: rect.center,
+              width: rect.width,
+              height: rect.width /
+                  _screenDestinationRect!.width *
+                  _screenDestinationRect!.height,
+            );
             _reachCropRectEdge = true;
           }
+          totalScale =
+              totalScale / (rect.width / _screenDestinationRect!.width);
+          preTotalScale = totalScale;
+          _screenDestinationRect = rect;
         }
       }
     } else {
       _screenDestinationRect = getRectWithScale(_rawDestinationRect!);
+      final boundaryRect =
+          computeBoundary(_screenDestinationRect!, screenCropRect!);
+      if (isNeedBackToBounds) {
+        _screenDestinationRect = boundaryRect;
+        isNeedBackToBounds = false;
+      }
     }
 
+    if (isRotated) {
+      isRotated = false;
+    }
     return _screenDestinationRect!;
   }
 
@@ -315,52 +342,45 @@ class EditActionDetails {
   }
 
   Rect computeBoundary(Rect result, Rect layoutRect) {
-    if (_computeHorizontalBoundary) {
-      //move right
-      if (doubleCompare(result.left, layoutRect.left) >= 0) {
-        result = Rect.fromLTWH(
-          layoutRect.left,
-          result.top,
-          result.width,
-          result.height,
-        );
-      }
-
-      ///move left
-      if (doubleCompare(result.right, layoutRect.right) <= 0) {
-        result = Rect.fromLTWH(
-          layoutRect.right - result.width,
-          result.top,
-          result.width,
-          result.height,
-        );
-      }
+    //move right
+    if (doubleCompare(result.left, layoutRect.left) >= 0) {
+      result = Rect.fromLTWH(
+        layoutRect.left,
+        result.top,
+        result.width,
+        result.height,
+      );
     }
 
-    if (_computeVerticalBoundary) {
-      //move down
-      if (doubleCompare(result.bottom, layoutRect.bottom) <= 0) {
-        result = Rect.fromLTWH(
-          result.left,
-          layoutRect.bottom - result.height,
-          result.width,
-          result.height,
-        );
-      }
-
-      //move up
-      if (doubleCompare(result.top, layoutRect.top) >= 0) {
-        result = Rect.fromLTWH(
-          result.left,
-          layoutRect.top,
-          result.width,
-          result.height,
-        );
-      }
+    //move left
+    if (doubleCompare(result.right, layoutRect.right) <= 0) {
+      result = Rect.fromLTWH(
+        layoutRect.right - result.width,
+        result.top,
+        result.width,
+        result.height,
+      );
     }
 
-    _computeHorizontalBoundary = true;
-    _computeVerticalBoundary = true;
+    //move down
+    if (doubleCompare(result.bottom, layoutRect.bottom) <= 0) {
+      result = Rect.fromLTWH(
+        result.left,
+        layoutRect.bottom - result.height,
+        result.width,
+        result.height,
+      );
+    }
+
+    //move up
+    if (doubleCompare(result.top, layoutRect.top) >= 0) {
+      result = Rect.fromLTWH(
+        result.left,
+        layoutRect.top,
+        result.width,
+        result.height,
+      );
+    }
     return result;
   }
 }
