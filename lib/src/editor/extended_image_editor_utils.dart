@@ -273,7 +273,7 @@ class EditActionDetails {
 
       final boundaryRect =
           computeBoundary(_screenDestinationRect!, screenCropRect!);
-      if (isNeedBackToBounds) {
+      if (isNeedBackToBounds || isRotated) {
         _screenDestinationRect = boundaryRect;
         isNeedBackToBounds = false;
       }
